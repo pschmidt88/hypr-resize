@@ -29,6 +29,7 @@ executable(
     'src/utils.c',
     'src/utils_cairo.c',
     'src/sway_ipc.c',
+    'src/resize_ipc.c',
     'src/sway_win.c',
     'src/resize_params.c',
     'src/render.c',

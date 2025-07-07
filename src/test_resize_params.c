@@ -50,15 +50,14 @@ int main() {
                 [RESIZE_TOP]    = NULL,
                 [RESIZE_BOTTOM] = NULL,
             },
-        .counts =
-            {
-                [RESIZE_HORIZONTAL] = ARRAY_LEN(expected_horizontal_params),
-                [RESIZE_VERTICAL]   = ARRAY_LEN(expected_vertical_params),
-                [RESIZE_RIGHT]      = 0,
-                [RESIZE_LEFT]       = 0,
-                [RESIZE_TOP]        = 0,
-                [RESIZE_BOTTOM]     = 0,
-            },
+        .counts = {
+            [RESIZE_HORIZONTAL] = ARRAY_LEN(expected_horizontal_params),
+            [RESIZE_VERTICAL]   = ARRAY_LEN(expected_vertical_params),
+            [RESIZE_RIGHT]      = 0,
+            [RESIZE_LEFT]       = 0,
+            [RESIZE_TOP]        = 0,
+            [RESIZE_BOTTOM]     = 0,
+        },
     };
 
     for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {

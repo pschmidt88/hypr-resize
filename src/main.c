@@ -1,6 +1,7 @@
 #include "fractional-scale-v1-client-protocol.h"
 #include "log.h"
 #include "render.h"
+#include "resize_ipc.h"
 #include "resize_params.h"
 #include "state.h"
 #include "surface_buffer.h"
@@ -682,18 +683,13 @@ int main(int argc, char **argv) {
     }
 
     if (state.selected_resize != NULL) {
-        char cmd[256];
-        snprintf(
-            cmd, sizeof(cmd) - 1, "resize set %s %dpx",
-            state.resize_direction == RESIZE_VERTICAL ? "height" : "width",
-            state.selected_resize->size
+        sway_ipc_send_resize(
+            sway_ipc_socket, state.resize_direction,
+            state.selected_resize->size -
+                resize_direction_rect_to_size(
+                    state.resize_direction, &state.focused_window.rect
+                )
         );
-        cmd[sizeof(cmd) - 1] = '\0';
-
-        sway_ipc_send(sway_ipc_socket, SWAY_MSG_RUN_COMMAND, cmd, strlen(cmd));
-        struct sway_ipc_msg *res = sway_ipc_recv(sway_ipc_socket);
-        puts(res->payload);
-        free(res);
     }
 
     close(sway_ipc_socket);

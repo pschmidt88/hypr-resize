@@ -107,7 +107,10 @@ static void _render_guides(
         cairo_text_extents(cairo, label, &te);
 
         uint32_t pos = start_pos + GUIDE_PADDING * (y + 1);
-        if (direction == RESIZE_VERTICAL) {
+        switch (direction) {
+        case RESIZE_TOP:
+        case RESIZE_BOTTOM:
+        case RESIZE_VERTICAL:
             if (param->guides[0] != NO_GUIDE) {
                 _render_vertical_guide(
                     cairo, pos, focused_window->rect.y, param->guides[0], label
@@ -120,7 +123,10 @@ static void _render_guides(
                     param->guides[1], label
                 );
             }
-        } else {
+            break;
+        case RESIZE_LEFT:
+        case RESIZE_RIGHT:
+        case RESIZE_HORIZONTAL:
             if (param->guides[0] != NO_GUIDE) {
                 _render_horizontal_guide(
                     cairo, pos, focused_window->rect.x, param->guides[0], label
@@ -155,18 +161,13 @@ void render(struct state *state, cairo_t *cairo) {
     cairo_set_source_u32(cairo, WIN_BG_COLOR);
     cairo_fill(cairo);
 
-    _render_guides(
-        cairo, state->resize_params->params[RESIZE_VERTICAL],
-        state->resize_params->counts[RESIZE_VERTICAL], &state->focused_window,
-        RESIZE_VERTICAL,
-        state->resize_params->applicable_counts[RESIZE_VERTICAL]
-    );
-    _render_guides(
-        cairo, state->resize_params->params[RESIZE_HORIZONTAL],
-        state->resize_params->counts[RESIZE_HORIZONTAL], &state->focused_window,
-        RESIZE_HORIZONTAL,
-        state->resize_params->applicable_counts[RESIZE_HORIZONTAL]
-    );
+    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
+        _render_guides(
+            cairo, state->resize_params->params[direction],
+            state->resize_params->counts[direction], &state->focused_window,
+            direction, state->resize_params->applicable_counts[direction]
+        );
+    }
 
     cairo_set_line_width(cairo, 1);
     cairo_rectangle(

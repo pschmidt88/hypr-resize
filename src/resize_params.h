@@ -35,6 +35,9 @@ struct resize_parameters {
 };
 
 const char *resize_direction_to_str(enum resize_direction direction);
+int32_t     resize_direction_rect_to_size(
+        enum resize_direction direction, struct rect *rect
+    );
 
 /*
  * Load the resize parameters from a string.

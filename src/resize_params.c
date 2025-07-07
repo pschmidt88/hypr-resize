@@ -166,20 +166,63 @@ static int _resize_parameters_compute_guides(
 
     size_t num_applicable = 0;
 
-    if (direction == RESIZE_HORIZONTAL) {
+    switch (direction) {
+    case RESIZE_HORIZONTAL:
         min_limit         = fw->resize_left_limit;
         max_limit         = fw->resize_right_limit;
         resizable_min_dir = fw->resize_left;
         resizable_max_dir = fw->resize_right;
         size              = fw->rect.w;
         pos               = fw->rect.x;
-    } else {
+        break;
+
+    case RESIZE_LEFT:
+        min_limit         = fw->resize_left_limit;
+        max_limit         = fw->rect.x + fw->rect.w;
+        resizable_min_dir = fw->resize_left;
+        resizable_max_dir = false;
+        size              = fw->rect.w;
+        pos               = fw->rect.x;
+        break;
+
+    case RESIZE_RIGHT:
+        min_limit         = fw->rect.x;
+        max_limit         = fw->resize_right_limit;
+        resizable_min_dir = false;
+        resizable_max_dir = fw->resize_right;
+        size              = fw->rect.w;
+        pos               = fw->rect.x;
+        break;
+
+    case RESIZE_VERTICAL:
         min_limit         = fw->resize_top_limit;
         max_limit         = fw->resize_bottom_limit;
         resizable_min_dir = fw->resize_top;
         resizable_max_dir = fw->resize_bottom;
         size              = fw->rect.h;
         pos               = fw->rect.y;
+        break;
+
+    case RESIZE_TOP:
+        min_limit         = fw->resize_top_limit;
+        max_limit         = fw->rect.y + fw->rect.h;
+        resizable_min_dir = fw->resize_top;
+        resizable_max_dir = false;
+        size              = fw->rect.h;
+        pos               = fw->rect.y;
+        break;
+
+    case RESIZE_BOTTOM:
+        min_limit         = fw->rect.y;
+        max_limit         = fw->resize_bottom_limit;
+        resizable_min_dir = false;
+        resizable_max_dir = fw->resize_bottom;
+        size              = fw->rect.h;
+        pos               = fw->rect.y;
+        break;
+
+    default:
+        return -1;
     }
 
     for (int i = 0; i < len; i++) {
@@ -294,19 +337,18 @@ static int _resize_parameters_compute_guides(
 int resize_parameters_compute_guides(
     struct resize_parameters *params, struct focused_window *fw
 ) {
-    params->applicable_counts[RESIZE_HORIZONTAL] =
-        _resize_parameters_compute_guides(
-            params->params[RESIZE_HORIZONTAL],
-            params->counts[RESIZE_HORIZONTAL], fw, RESIZE_HORIZONTAL
-        );
-    params->applicable_counts[RESIZE_VERTICAL] =
-        _resize_parameters_compute_guides(
-            params->params[RESIZE_VERTICAL], params->counts[RESIZE_VERTICAL],
-            fw, RESIZE_VERTICAL
-        );
+    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
+        params->applicable_counts[direction] =
+            _resize_parameters_compute_guides(
+                params->params[direction], params->counts[direction], fw,
+                direction
+            );
+        if (params->applicable_counts[direction] < 0) {
+            return params->applicable_counts[direction];
+        }
+    }
 
-    return params->applicable_counts[RESIZE_VERTICAL] < 0 ||
-           params->applicable_counts[RESIZE_HORIZONTAL] < 0;
+    return 0;
 }
 
 static void
@@ -349,6 +391,23 @@ const char *resize_direction_to_str(enum resize_direction direction) {
     };
 
     return direction_strs[direction];
+}
+
+int32_t resize_direction_rect_to_size(
+    enum resize_direction direction, struct rect *rect
+) {
+    switch (direction) {
+    case RESIZE_HORIZONTAL:
+    case RESIZE_LEFT:
+    case RESIZE_RIGHT:
+        return rect->w;
+    case RESIZE_VERTICAL:
+    case RESIZE_TOP:
+    case RESIZE_BOTTOM:
+        return rect->h;
+    }
+
+    return 0;
 }
 
 void log_resize_params(struct resize_parameters *params) {
