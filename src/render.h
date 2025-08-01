@@ -6,5 +6,6 @@
 #include <cairo/cairo.h>
 
 void render(struct state *state, cairo_t *cairo);
+void render_options(struct state *state, cairo_t *cairo);
 
 #endif

@@ -1,6 +1,6 @@
 #include "fractional-scale-v1-client-protocol.h"
 #include "log.h"
-#include "render.h"
+#include "phase.h"
 #include "resize_ipc.h"
 #include "resize_params.h"
 #include "state.h"
@@ -47,7 +47,7 @@ static void send_frame(struct state *state) {
     cairo_identity_matrix(cairo);
     cairo_scale(cairo, scale_120 / 120.0, scale_120 / 120.0);
 
-    render(state, cairo);
+    state->phase->render(state, cairo);
 
     wl_surface_set_buffer_scale(state->wl_surface, 1);
 
@@ -146,21 +146,11 @@ static void handle_keyboard_key(
     if (key_state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         if (key_sym == XKB_KEY_Escape) {
             state->running = false;
-        }
-
-        if (text[0] == '\0') {
             return;
         }
 
-        uint32_t rune;
-        str_to_rune(text, &rune);
-
-        struct resize_parameter *resize_param = find_resize_param_by_symbol(
-            state->resize_params, rune, &state->resize_direction
-        );
-        if (resize_param != NULL && resize_param->applicable) {
-            state->selected_resize = resize_param;
-            state->running         = false;
+        if (state->phase->key(state, key_sym, text)) {
+            request_frame(state);
         }
     }
 }
@@ -477,6 +467,7 @@ int main(int argc, char **argv) {
         .running              = true,
         .scale_120            = 0,
         .selected_resize      = NULL,
+        .phase                = &phase_resize_dir_interface,
     };
 
     static struct option long_options[] = {
@@ -486,9 +477,8 @@ int main(int argc, char **argv) {
         {"guides", required_argument, 0, 'g'},
     };
 
-    char *guides_string = NULL;
-    int   option_char   = 0;
-    int   option_index  = 0;
+    int option_char  = 0;
+    int option_index = 0;
     while ((option_char =
                 getopt_long(argc, argv, "hvg:", long_options, &option_index)) !=
            EOF) {
@@ -501,10 +491,6 @@ int main(int argc, char **argv) {
             print_version();
             return 0;
 
-        case 'g':
-            guides_string = strdup(optarg);
-            break;
-
         default:
             LOG_ERR("Unknown argument.");
             return 1;
@@ -513,19 +499,6 @@ int main(int argc, char **argv) {
 
     wl_list_init(&state.outputs);
     wl_list_init(&state.seats);
-
-    if (guides_string == NULL) {
-        LOG_ERR("Guides need to be set with -g.");
-        return 1;
-    }
-
-    state.resize_params = load_resize_parameters(guides_string);
-    free(guides_string);
-
-    if (state.resize_params == NULL) {
-        LOG_ERR("Failed to load resize guides");
-        return 1;
-    }
 
     int sway_ipc_socket = sway_ipc_open_socket();
     if (sway_ipc_socket < 0) {
@@ -611,11 +584,6 @@ int main(int argc, char **argv) {
     }
 
     log_focused_window(&state.focused_window);
-
-    resize_parameters_compute_guides(
-        state.resize_params, &state.focused_window
-    );
-    log_resize_params(state.resize_params);
 
     surface_buffer_pool_init(&state.surface_buffer_pool);
 

@@ -1,17 +1,12 @@
 #include "render.h"
 
+#include "consts.h"
 #include "resize_params.h"
 #include "utils_cairo.h"
 
 #include <stddef.h>
 
-#define BG_COLOR              0x11111188
-#define WIN_BORDER_COLOR      0x88aa88ee
-#define WIN_BG_COLOR          0x00330088
-#define GUIDE_LINE_COLOR      0xf8d5dbee
-#define GUIDE_LABEL_COLOR     0xeeeeeeff
-#define GUIDE_LABEL_FONT_SIZE 15
-
+/*
 static void _render_vertical_guide(
     cairo_t *cairo, uint32_t x, uint32_t start_y, uint32_t end_y, char *label
 ) {
@@ -142,39 +137,41 @@ static void _render_guides(
         }
         y++;
     }
-}
+}*/
 
 void render(struct state *state, cairo_t *cairo) {
-    cairo_select_font_face(
-        cairo, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL
+    /*
+cairo_select_font_face(
+    cairo, "monospace", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL
+);
+
+cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
+cairo_set_source_u32(cairo, BG_COLOR);
+cairo_paint(cairo);
+
+cairo_rectangle(
+    cairo, state->focused_window.rect.x + .5,
+    state->focused_window.rect.y + .5, state->focused_window.rect.w,
+    state->focused_window.rect.h
+);
+cairo_set_source_u32(cairo, WIN_BG_COLOR);
+cairo_fill(cairo);
+
+for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
+    _render_guides(
+        cairo, state->resize_params->params[direction],
+        state->resize_params->counts[direction], &state->focused_window,
+        direction, state->resize_params->applicable_counts[direction]
     );
+}
 
-    cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_u32(cairo, BG_COLOR);
-    cairo_paint(cairo);
-
-    cairo_rectangle(
-        cairo, state->focused_window.rect.x + .5,
-        state->focused_window.rect.y + .5, state->focused_window.rect.w,
-        state->focused_window.rect.h
-    );
-    cairo_set_source_u32(cairo, WIN_BG_COLOR);
-    cairo_fill(cairo);
-
-    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-        _render_guides(
-            cairo, state->resize_params->params[direction],
-            state->resize_params->counts[direction], &state->focused_window,
-            direction, state->resize_params->applicable_counts[direction]
-        );
-    }
-
-    cairo_set_line_width(cairo, 1);
-    cairo_rectangle(
-        cairo, state->focused_window.rect.x + .5,
-        state->focused_window.rect.y + .5, state->focused_window.rect.w - 1,
-        state->focused_window.rect.h - 1
-    );
-    cairo_set_source_u32(cairo, WIN_BORDER_COLOR);
-    cairo_stroke(cairo);
+cairo_set_line_width(cairo, 1);
+cairo_rectangle(
+    cairo, state->focused_window.rect.x + .5,
+    state->focused_window.rect.y + .5, state->focused_window.rect.w - 1,
+    state->focused_window.rect.h - 1
+);
+cairo_set_source_u32(cairo, WIN_BORDER_COLOR);
+cairo_stroke(cairo);
+    */
 }

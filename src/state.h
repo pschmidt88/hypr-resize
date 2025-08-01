@@ -36,6 +36,8 @@ struct seat {
     struct state       *state;
 };
 
+struct phase_interface;
+
 struct state {
     struct wl_display                     *wl_display;
     struct wl_registry                    *wl_registry;
@@ -58,10 +60,11 @@ struct state {
     uint32_t                               surface_width;
     bool                                   running;
     bool                                   surface_configured;
-    struct resize_parameters              *resize_params;
     struct focused_window                  focused_window;
+    struct resize_parameters              *resize_params;
     struct resize_parameter               *selected_resize;
     enum resize_direction                  resize_direction;
+    struct phase_interface                *phase;
 };
 
 #endif

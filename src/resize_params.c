@@ -7,372 +7,235 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int _load_resize_param_from_token(
-    struct resize_parameter *param, char *token,
-    enum resize_direction *direction
+void resize_guides_builder_init(
+    struct resize_guides_builder_ctx *ctx, enum resize_direction direction,
+    struct focused_window *fw, bool relative, bool percentage
 ) {
-    uint32_t rune;
-    char    *p = token + str_to_rune(token, &rune);
+    ctx->direction  = direction;
+    ctx->relative   = relative;
+    ctx->percentage = percentage;
 
-    if (*p != ':') {
-        return 1;
-    }
-
-    p++;
-
-    switch (*p) {
-    case 't':
-        *direction = RESIZE_TOP;
-        break;
-    case 'b':
-        *direction = RESIZE_BOTTOM;
-        break;
-    case 'l':
-        *direction = RESIZE_LEFT;
-        break;
-    case 'r':
-        *direction = RESIZE_RIGHT;
-        break;
-    case 'h':
-        *direction = RESIZE_HORIZONTAL;
-        break;
-    case 'v':
-        *direction = RESIZE_VERTICAL;
-        break;
-    default:
-        return 2;
-    }
-    p++;
-
-    if (*p != ':') {
-        return 1;
-    }
-
-    p++;
-
-    bool relative = false;
-    bool negative = false;
-    if (*p == '+') {
-        relative = true;
-        p++;
-    } else if (*p == '-') {
-        relative = true;
-        negative = true;
-        p++;
-    }
-
-    char num_str[16];
-    int  i = 0;
-
-    while ('0' <= *p && *p <= '9' && i < sizeof(num_str) - 1) {
-        num_str[i++] = *p;
-        p++;
-    }
-
-    if (i == 0) {
-        return 3;
-    }
-
-    num_str[i] = '\0';
-    int value  = atoi(num_str);
-
-    bool percentage = false;
-    if (*p == '%') {
-        percentage = true;
-        p++;
-    }
-
-    if (*p != '\0') {
-        return 4;
-    }
-
-    param->relative   = relative;
-    param->percentage = percentage;
-    param->value      = negative ? -value : value;
-    param->symbol     = rune;
-
-    return 0;
-}
-
-struct resize_parameters *load_resize_parameters(char *s) {
-    static const char         delims[] = " \t\n";
-    struct resize_parameters *params = malloc(sizeof(struct resize_parameters));
-
-    int  s_len = strlen(s);
-    char buf[s_len + 1];
-    strcpy(buf, s);
-    buf[s_len] = '\0';
-
-    size_t caps[NUM_DIRECTIONS];
-    for (int i = 0; i < NUM_DIRECTIONS; i++) {
-        caps[i]           = 0;
-        params->params[i] = NULL;
-        params->counts[i] = 0;
-    }
-
-    char *strtok_p;
-
-    char *token = strtok_r(buf, delims, &strtok_p);
-    while (token != NULL) {
-        struct resize_parameter param;
-        enum resize_direction   direction;
-
-        if (_load_resize_param_from_token(&param, token, &direction) != 0) {
-            LOG_ERR("Could not parse token `%s`.", token);
-            free_resize_params(params);
-            return NULL;
-        }
-
-        if (caps[direction] == 0) {
-            caps[direction] = 8;
-            params->params[direction] =
-                malloc(sizeof(struct resize_parameter) * caps[direction]);
-        } else if (caps[direction] < params->counts[direction] + 1) {
-            caps[direction]           *= 1.5;
-            params->params[direction]  = realloc(
-                params->params[direction],
-                sizeof(struct resize_parameter) * caps[direction]
-            );
-        }
-        memcpy(
-            &params->params[direction][params->counts[direction]++], &param,
-            sizeof(struct resize_parameter)
-        );
-
-        token = strtok_r(NULL, delims, &strtok_p);
-    }
-
-    for (int i = 0; i < NUM_DIRECTIONS; i++) {
-        if (params->params[i] != NULL) {
-            params->params[i] = realloc(
-                params->params[i],
-                sizeof(struct resize_parameter) * params->counts[i]
-            );
-        }
-    }
-    return params;
-}
-
-static int _resize_parameters_compute_guides(
-    struct resize_parameter *params, size_t len, struct focused_window *fw,
-    enum resize_direction direction
-) {
-    int32_t min_limit;
-    int32_t max_limit;
-    int32_t resizable_min_dir;
-    int32_t resizable_max_dir;
-    int32_t size;
-    int32_t pos;
-
-    size_t num_applicable = 0;
+    ctx->resize_params_cap   = 16;
+    ctx->resize_params_count = 0;
+    ctx->resize_params =
+        malloc(ctx->resize_params_cap * sizeof(*ctx->resize_params));
 
     switch (direction) {
     case RESIZE_HORIZONTAL:
-        min_limit         = fw->resize_left_limit;
-        max_limit         = fw->resize_right_limit;
-        resizable_min_dir = fw->resize_left;
-        resizable_max_dir = fw->resize_right;
-        size              = fw->rect.w;
-        pos               = fw->rect.x;
+        ctx->min_limit         = fw->resize_left_limit;
+        ctx->max_limit         = fw->resize_right_limit;
+        ctx->resizable_min_dir = fw->resize_left;
+        ctx->resizable_max_dir = fw->resize_right;
+        ctx->size              = fw->rect.w;
+        ctx->pos               = fw->rect.x;
         break;
 
     case RESIZE_LEFT:
-        min_limit         = fw->resize_left_limit;
-        max_limit         = fw->rect.x + fw->rect.w;
-        resizable_min_dir = fw->resize_left;
-        resizable_max_dir = false;
-        size              = fw->rect.w;
-        pos               = fw->rect.x;
+        ctx->min_limit         = fw->resize_left_limit;
+        ctx->max_limit         = fw->rect.x + fw->rect.w;
+        ctx->resizable_min_dir = fw->resize_left;
+        ctx->resizable_max_dir = false;
+        ctx->size              = fw->rect.w;
+        ctx->pos               = fw->rect.x;
         break;
 
     case RESIZE_RIGHT:
-        min_limit         = fw->rect.x;
-        max_limit         = fw->resize_right_limit;
-        resizable_min_dir = false;
-        resizable_max_dir = fw->resize_right;
-        size              = fw->rect.w;
-        pos               = fw->rect.x;
-        break;
-
-    case RESIZE_VERTICAL:
-        min_limit         = fw->resize_top_limit;
-        max_limit         = fw->resize_bottom_limit;
-        resizable_min_dir = fw->resize_top;
-        resizable_max_dir = fw->resize_bottom;
-        size              = fw->rect.h;
-        pos               = fw->rect.y;
+        ctx->min_limit         = fw->rect.x;
+        ctx->max_limit         = fw->resize_right_limit;
+        ctx->resizable_min_dir = false;
+        ctx->resizable_max_dir = fw->resize_right;
+        ctx->size              = fw->rect.w;
+        ctx->pos               = fw->rect.x;
         break;
 
     case RESIZE_TOP:
-        min_limit         = fw->resize_top_limit;
-        max_limit         = fw->rect.y + fw->rect.h;
-        resizable_min_dir = fw->resize_top;
-        resizable_max_dir = false;
-        size              = fw->rect.h;
-        pos               = fw->rect.y;
+        ctx->min_limit         = fw->resize_top_limit;
+        ctx->max_limit         = fw->rect.y + fw->rect.h;
+        ctx->resizable_min_dir = fw->resize_top;
+        ctx->resizable_max_dir = false;
+        ctx->size              = fw->rect.h;
+        ctx->pos               = fw->rect.y;
         break;
 
     case RESIZE_BOTTOM:
-        min_limit         = fw->rect.y;
-        max_limit         = fw->resize_bottom_limit;
-        resizable_min_dir = false;
-        resizable_max_dir = fw->resize_bottom;
-        size              = fw->rect.h;
-        pos               = fw->rect.y;
+        ctx->min_limit         = fw->rect.y;
+        ctx->max_limit         = fw->resize_bottom_limit;
+        ctx->resizable_min_dir = false;
+        ctx->resizable_max_dir = fw->resize_bottom;
+        ctx->size              = fw->rect.h;
+        ctx->pos               = fw->rect.y;
         break;
 
-    default:
-        return -1;
+    case RESIZE_VERTICAL:
+        ctx->min_limit         = fw->resize_top_limit;
+        ctx->max_limit         = fw->resize_bottom_limit;
+        ctx->resizable_min_dir = fw->resize_top;
+        ctx->resizable_max_dir = fw->resize_bottom;
+        ctx->size              = fw->rect.h;
+        ctx->pos               = fw->rect.y;
+        break;
     }
-
-    for (int i = 0; i < len; i++) {
-        struct resize_parameter *param = &params[i];
-
-        if (!resizable_min_dir && !resizable_max_dir) {
-            param->applicable = false;
-            continue;
-        }
-
-        int32_t new_size;
-
-        if (param->relative) {
-            new_size = param->percentage ? (100 + param->value) * size / 100
-                                         : size + param->value;
-        } else {
-            new_size = param->percentage
-                           ? (max_limit - min_limit) * param->value / 100
-                           : param->value;
-        }
-
-        if (abs(new_size - size) < 2) {
-            param->applicable = false;
-            continue;
-        }
-
-        int32_t guide_pos[2];
-
-        if (new_size < 15) {
-            param->applicable = false;
-            continue;
-        }
-
-        if (!resizable_min_dir) {
-            /*
-                pos
-                min_limit                    max_limit
-                |                            |
-            ----|--------|-------|-----------|------->
-                ^________^       ^
-                   size          guide_pos[0]
-                ^________________^
-                     new_size
-
-             */
-
-            guide_pos[0] = NO_GUIDE;
-            guide_pos[1] = new_size + pos;
-
-            if (guide_pos[1] > max_limit) {
-                param->applicable = false;
-                continue;
-            }
-
-        } else if (!resizable_max_dir) {
-            /*
-                min_limit                    max_limit
-                |                pos         |
-            ----|--------|-------|-----------|------->
-                         .       ^___________^
-                         .           size    .
-                         ^___________________^
-                                new_size
-             */
-
-            guide_pos[0] = pos + size - new_size;
-            guide_pos[1] = NO_GUIDE;
-
-            if (guide_pos[0] < min_limit) {
-                param->applicable = false;
-                continue;
-            }
-        } else {
-            /*
-                min_limit                                           max_limit
-                |                pos                                |
-            ----|--------|-------|-----------|-------|--------------|------->
-                         .       ^___________^       .
-                         .           size            .
-                         ^___________________________^
-                                   new_size
-             */
-
-            int32_t grow = (new_size - size) / 2;
-            guide_pos[0] = pos - grow;
-
-            if (guide_pos[0] < min_limit) {
-                param->applicable = false;
-                continue;
-            }
-
-            guide_pos[1] = pos + size + grow;
-            if (guide_pos[1] > max_limit) {
-                param->applicable = false;
-                continue;
-            }
-
-            new_size = guide_pos[1] - guide_pos[0];
-        }
-
-        param->size       = new_size;
-        param->guides[0]  = guide_pos[0];
-        param->guides[1]  = guide_pos[1];
-        param->applicable = true;
-
-        num_applicable++;
-    }
-
-    return num_applicable;
 }
 
-int resize_parameters_compute_guides(
-    struct resize_parameters *params, struct focused_window *fw
+static int _resize_guides_builder_compute(
+    struct resize_guides_builder_ctx *ctx, struct resize_parameter *param
 ) {
-    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-        params->applicable_counts[direction] =
-            _resize_parameters_compute_guides(
-                params->params[direction], params->counts[direction], fw,
-                direction
-            );
-        if (params->applicable_counts[direction] < 0) {
-            return params->applicable_counts[direction];
+    if (!ctx->resizable_min_dir && !ctx->resizable_max_dir) {
+        return 0;
+    }
+
+    int32_t new_size;
+
+    if (ctx->relative) {
+        new_size = ctx->percentage ? (100 + param->value) * ctx->size / 100
+                                   : ctx->size + param->value;
+    } else {
+        new_size = ctx->percentage
+                       ? (ctx->max_limit - ctx->min_limit) * param->value / 100
+                       : param->value;
+    }
+
+    if (abs(new_size - ctx->size) < 2) {
+        return 0;
+    }
+
+    int32_t guide_pos[2];
+
+    if (new_size < 15) {
+        return 0;
+    }
+
+    if (!ctx->resizable_min_dir) {
+        /*
+            pos
+            min_limit                    max_limit
+            |                            |
+        ----|--------|-------|-----------|------->
+            ^________^       ^
+               size          guide_pos[0]
+            ^________________^
+                 new_size
+
+         */
+
+        guide_pos[0] = new_size + ctx->pos;
+        guide_pos[1] = NO_GUIDE;
+
+        if (guide_pos[0] > ctx->max_limit) {
+            return 0;
         }
+
+    } else if (!ctx->resizable_max_dir) {
+        /*
+            min_limit                    max_limit
+            |                pos         |
+        ----|--------|-------|-----------|------->
+                     .       ^___________^
+                     .           size    .
+                     ^___________________^
+                            new_size
+         */
+
+        guide_pos[0] = ctx->pos + ctx->size - new_size;
+        guide_pos[1] = NO_GUIDE;
+
+        if (guide_pos[0] < ctx->min_limit) {
+            return 0;
+        }
+    } else {
+        /*
+            min_limit                                           max_limit
+            |                pos                                |
+        ----|--------|-------|-----------|-------|--------------|------->
+                     .       ^___________^       .
+                     .           size            .
+                     ^___________________________^
+                               new_size
+         */
+
+        int32_t grow = (new_size - ctx->size) / 2;
+        guide_pos[0] = ctx->pos - grow;
+
+        if (guide_pos[0] < ctx->min_limit) {
+            return 0;
+        }
+
+        guide_pos[1] = ctx->pos + ctx->size + grow;
+        if (guide_pos[1] > ctx->max_limit) {
+            return 0;
+        }
+
+        new_size = guide_pos[1] - guide_pos[0];
+    }
+
+    param->size      = new_size;
+    param->guides[0] = guide_pos[0];
+    param->guides[1] = guide_pos[1];
+
+    return 1;
+}
+
+int resize_guides_builder_add(
+    struct resize_guides_builder_ctx *ctx, int32_t value, uint32_t symbol
+) {
+    if (ctx->resize_params_count + 1 >= ctx->resize_params_cap) {
+        ctx->resize_params_cap *= 1.5;
+        ctx->resize_params      = realloc(
+            ctx->resize_params,
+            sizeof(*ctx->resize_params) * ctx->resize_params_cap
+        );
+    }
+
+    struct resize_parameter *param =
+        &ctx->resize_params[ctx->resize_params_count];
+    param->value  = value;
+    param->symbol = symbol;
+
+    if (_resize_guides_builder_compute(ctx, param)) {
+        ctx->resize_params_count++;
+        return 1;
     }
 
     return 0;
 }
 
-static void
-_log_resize_params(struct resize_parameter *params, int len, const char *name) {
-    if (len == 0) {
-        LOG_INFO("params[%s] = []", name);
+struct resize_parameters *
+resize_guides_builder_make(struct resize_guides_builder_ctx *ctx) {
+    struct resize_parameters *params = malloc(sizeof(*params));
+    params->relative                 = ctx->relative;
+    params->percentage               = ctx->percentage;
+    params->direction                = ctx->direction;
+    params->count                    = ctx->resize_params_count;
+    params->params                   = realloc(
+        ctx->resize_params, ctx->resize_params_count * sizeof(*params->params)
+    );
+
+    ctx->resize_params_count = 0;
+    ctx->resize_params_cap   = 0;
+    ctx->resize_params       = NULL;
+
+    return params;
+}
+
+void log_resize_params(struct resize_parameters *params, const char *name) {
+    LOG_INFO("params[%s]", name);
+    LOG_INFO(" .relative = %s", params->relative ? "true" : "false");
+    LOG_INFO(" .percentage = %s", params->percentage ? "true" : "false");
+
+    if (params->count == 0) {
+        LOG_INFO(" .[]");
         return;
     }
 
-    for (int i = 0; i < len; i++) {
+    for (int i = 0; i < params->count; i++) {
         char symbol[5];
-        rune_to_str(params[i].symbol, symbol);
-        LOG_INFO("params[%s][%d]", name, i);
-        LOG_INFO(" .symbol = %s (%d)", symbol, params[i].symbol);
-        LOG_INFO(" .value = %d", params[i].value);
-        LOG_INFO(" .relative = %s", params[i].relative ? "true" : "false");
-        LOG_INFO(" .percentage = %s", params[i].percentage ? "true" : "false");
-        LOG_INFO(" .applicable = %s", params[i].applicable ? "true" : "false");
-
-        if (params[i].applicable) {
-            LOG_INFO("  .size = %d", params[i].size);
-            LOG_INFO("  .guides[0] = %d", params[i].guides[0]);
-            LOG_INFO("  .guides[1] = %d", params[i].guides[1]);
-        }
+        rune_to_str(params->params[i].symbol, symbol);
+        LOG_INFO(" .[%d]", i);
+        LOG_INFO("  .symbol = %s (%d)", symbol, params->params[i].symbol);
+        LOG_INFO("  .value = %d", params->params[i].value);
+        LOG_INFO("  .size = %d", params->params[i].size);
+        LOG_INFO("  .guides[0] = %d", params->params[i].guides[0]);
+        LOG_INFO("  .guides[1] = %d", params->params[i].guides[1]);
     }
 }
 
@@ -393,6 +256,27 @@ const char *resize_direction_to_str(enum resize_direction direction) {
     return direction_strs[direction];
 }
 
+bool is_resize_direction_possible(
+    enum resize_direction direction, bool left, bool right, bool top,
+    bool bottom
+) {
+
+#define DIR_MASK(left, right, top, bottom) \
+    ((left != 0) | (right != 0) << 1 | (top != 0) << 2 | (bottom != 0) << 3)
+
+    const static uint8_t direction_to_mask[NUM_DIRECTIONS] = {
+        [RESIZE_LEFT]       = DIR_MASK(1, 0, 0, 0),
+        [RESIZE_RIGHT]      = DIR_MASK(0, 1, 0, 0),
+        [RESIZE_TOP]        = DIR_MASK(0, 0, 1, 0),
+        [RESIZE_BOTTOM]     = DIR_MASK(0, 0, 0, 1),
+        [RESIZE_HORIZONTAL] = DIR_MASK(1, 1, 0, 0),
+        [RESIZE_VERTICAL]   = DIR_MASK(0, 0, 1, 1),
+    };
+
+    return (DIR_MASK(left, right, top, bottom) &
+            direction_to_mask[direction]) != 0;
+}
+
 int32_t resize_direction_rect_to_size(
     enum resize_direction direction, struct rect *rect
 ) {
@@ -410,36 +294,20 @@ int32_t resize_direction_rect_to_size(
     return 0;
 }
 
-void log_resize_params(struct resize_parameters *params) {
-    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-        _log_resize_params(
-            params->params[direction], params->counts[direction],
-            resize_direction_to_str(direction)
-        );
-    }
-}
-
-struct resize_parameter *find_resize_param_by_symbol(
-    struct resize_parameters *params, uint32_t rune,
-    enum resize_direction *out_direction
-) {
-    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-        for (int i = 0; i < params->counts[direction]; i++) {
-            if (params->params[direction][i].symbol == rune) {
-                *out_direction = direction;
-                return &params->params[direction][i];
-            }
+struct resize_parameter *
+find_resize_param_by_symbol(struct resize_parameters *params, uint32_t rune) {
+    for (int i = 0; i < params->count; i++) {
+        if (params->params[i].symbol == rune) {
+            return &params->params[i];
         }
     }
 
     return NULL;
 }
 
-void free_resize_params(struct resize_parameters *params) {
-    for (int direction = 0; direction < NUM_DIRECTIONS; direction++) {
-        if (params->params[direction] != NULL) {
-            free(params->params[direction]);
-        }
+void resize_parameters_free(struct resize_parameters *params) {
+    if (params->params != NULL) {
+        free(params->params);
     }
     free(params);
 }

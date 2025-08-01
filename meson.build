@@ -33,6 +33,8 @@ executable(
     'src/sway_win.c',
     'src/resize_params.c',
     'src/render.c',
+    'src/phase_resize_dir.c',
+    'src/phase_resize.c',
     protos_src,
   ],
   dependencies: [
@@ -44,16 +46,4 @@ executable(
     jansson,
   ],
   install: true,
-)
-
-test(
-  'test_resize_params',
-  executable(
-    'test_resize_params',
-    [
-      'src/test_resize_params.c',
-      'src/resize_params.c',
-      'src/utils.c',
-    ],
-  ),
 )
