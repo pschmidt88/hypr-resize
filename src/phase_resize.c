@@ -322,6 +322,12 @@ static void phase_resize_render(struct state *state, cairo_t *cairo) {
 static bool
 phase_resize_key(struct state *state, xkb_keysym_t keysym, char *text) {
     if (keysym == XKB_KEY_BackSpace) {
+        // The edge selection was skipped, so there is nothing to go back to.
+        if (state->single_edge) {
+            state->running = false;
+            return false;
+        }
+
         resize_parameters_free(state->resize_params);
         state->resize_params = NULL;
         state->phase         = &phase_resize_dir_interface;

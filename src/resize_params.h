@@ -1,7 +1,7 @@
 #ifndef __RESIZE_PARAMS_H_INCLUDED__
 #define __RESIZE_PARAMS_H_INCLUDED__
 
-#include "sway_win.h"
+#include "hypr_win.h"
 
 #include <stdbool.h>
 #include <stdint.h>

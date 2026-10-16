@@ -60,6 +60,7 @@ struct state {
     uint32_t                               surface_width;
     bool                                   running;
     bool                                   surface_configured;
+    bool                                   single_edge;
     struct focused_window                  focused_window;
     struct resize_parameters              *resize_params;
     struct resize_parameter               *selected_resize;

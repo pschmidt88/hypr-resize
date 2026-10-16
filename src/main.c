@@ -1,19 +1,16 @@
 #include "fractional-scale-v1-client-protocol.h"
 #include "log.h"
+#include "hypr_win.h"
 #include "phase.h"
-#include "resize_ipc.h"
 #include "resize_params.h"
 #include "state.h"
 #include "surface_buffer.h"
-#include "sway_ipc.h"
-#include "sway_win.h"
 #include "viewporter-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 
 #include <cairo/cairo.h>
 #include <getopt.h>
-#include <jansson.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -149,7 +146,9 @@ static void handle_keyboard_key(
             return;
         }
 
-        if (state->phase->key(state, key_sym, text)) {
+        // Once a guide is selected the surface is about to be destroyed, so
+        // no new frame must be requested.
+        if (state->phase->key(state, key_sym, text) && state->running) {
             request_frame(state);
         }
     }
@@ -441,14 +440,14 @@ find_output_by_name(struct state *state, const char *name) {
 }
 
 static void print_usage() {
-    puts("sway-resize [OPTION...]\n");
+    puts("hypr-resize [OPTION...]\n");
 
     puts(" -h, --help          show this help");
     puts(" -v, --version       print version and exit");
 }
 
 static void print_version() {
-    printf("sway-resize %s\n", VERSION);
+    printf("hypr-resize %s\n", VERSION);
 }
 
 int main(int argc, char **argv) {
@@ -500,34 +499,32 @@ int main(int argc, char **argv) {
     wl_list_init(&state.outputs);
     wl_list_init(&state.seats);
 
-    int sway_ipc_socket = sway_ipc_open_socket();
-    if (sway_ipc_socket < 0) {
-        LOG_ERR("Could not open Sway socket.");
-        return 1;
-    }
-
-    sway_ipc_send(sway_ipc_socket, SWAY_MSG_GET_TREE, "", 0);
-    struct sway_ipc_msg *sway_tree_msg = sway_ipc_recv(sway_ipc_socket);
-    if (sway_tree_msg == NULL) {
-        LOG_ERR("Could not receive tree message.");
-        return 1;
-    }
-
-    json_error_t error;
-    json_t      *sway_tree = json_loads(sway_tree_msg->payload, 0, &error);
-    if (sway_tree == NULL) {
-        LOG_ERR("Could not parse tree.");
-        return 1;
-    }
-
-    free(sway_tree_msg);
-
-    int err = find_focused_window(&state.focused_window, sway_tree);
-    if (err) {
+    if (find_focused_window(&state.focused_window)) {
         LOG_ERR("Could not find focused window.");
         return 1;
     }
-    json_decref(sway_tree);
+
+    if (!state.focused_window.resize_left &&
+        !state.focused_window.resize_right &&
+        !state.focused_window.resize_top &&
+        !state.focused_window.resize_bottom) {
+        LOG_ERR("The focused window cannot be resized.");
+        return 1;
+    }
+
+    // With a single movable edge there is nothing to choose, so go straight
+    // to the guides.
+    struct focused_window *win   = &state.focused_window;
+    int                    edges = win->resize_left + win->resize_right +
+                win->resize_top + win->resize_bottom;
+    if (edges == 1) {
+        state.single_edge      = true;
+        state.resize_direction = win->resize_left    ? RESIZE_LEFT
+                                 : win->resize_right ? RESIZE_RIGHT
+                                 : win->resize_top   ? RESIZE_TOP
+                                                     : RESIZE_BOTTOM;
+        phase_resize_enter(&state, state.resize_direction);
+    }
 
     state.wl_display = wl_display_connect(NULL);
     if (state.wl_display == NULL) {
@@ -592,7 +589,7 @@ int main(int argc, char **argv) {
     state.wl_layer_surface = zwlr_layer_shell_v1_get_layer_surface(
         state.wl_layer_shell, state.wl_surface,
         state.current_output == NULL ? NULL : state.current_output->wl_output,
-        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "selection"
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "hypr-resize"
     );
     zwlr_layer_surface_v1_add_listener(
         state.wl_layer_surface, &wl_layer_surface_listener, &state
@@ -624,6 +621,13 @@ int main(int argc, char **argv) {
     wl_surface_commit(state.wl_surface);
     while (state.running && wl_display_dispatch(state.wl_display)) {}
 
+    // A pending frame callback would otherwise fire on the destroyed surface
+    // during the roundtrip below.
+    if (state.wl_surface_callback != NULL) {
+        wl_callback_destroy(state.wl_surface_callback);
+        state.wl_surface_callback = NULL;
+    }
+
     zwlr_layer_surface_v1_destroy(state.wl_layer_surface);
     wl_surface_destroy(state.wl_surface);
 
@@ -651,16 +655,25 @@ int main(int argc, char **argv) {
     }
 
     if (state.selected_resize != NULL) {
-        sway_ipc_send_resize(
-            sway_ipc_socket, state.resize_direction,
+        struct focused_window *fw = &state.focused_window;
+        int32_t                delta =
             state.selected_resize->size -
-                resize_direction_rect_to_size(
-                    state.resize_direction, &state.focused_window.rect
-                )
+            resize_direction_rect_to_size(state.resize_direction, &fw->rect);
+
+        // Hyprland moves whichever edge the layout allows, so the edge only
+        // moves the other way when it is the left or top one.
+        bool    horizontal = state.resize_direction == RESIZE_LEFT ||
+                          state.resize_direction == RESIZE_RIGHT ||
+                          state.resize_direction == RESIZE_HORIZONTAL;
+        bool    min_edge   = horizontal
+                                 ? fw->resize_left && !fw->resize_right
+                                 : fw->resize_top && !fw->resize_bottom;
+        int32_t distance   = min_edge ? -delta : delta;
+
+        hypr_send_resize(
+            fw->address, horizontal ? distance : 0, horizontal ? 0 : distance
         );
     }
-
-    close(sway_ipc_socket);
 
     return 0;
 }

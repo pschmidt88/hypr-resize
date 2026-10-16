@@ -9,7 +9,7 @@
 
 static const char *direction_to_label[] = {
     [RESIZE_VERTICAL] = "u", [RESIZE_HORIZONTAL] = "e", [RESIZE_LEFT] = "h",
-    [RESIZE_RIGHT] = "s",    [RESIZE_TOP] = "n",        [RESIZE_BOTTOM] = "t"
+    [RESIZE_RIGHT] = "l",    [RESIZE_TOP] = "k",        [RESIZE_BOTTOM] = "j"
 };
 
 static void
